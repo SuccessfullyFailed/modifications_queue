@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-	use crate::{ ModificationsQueueMut, ModificationsQueueRemoteMut };
+	use std::{thread::{self, sleep}, time::Duration};
+
+use crate::{ ModificationsQueueMut, ModificationsQueueRemoteMut };
 
 
 
@@ -71,5 +73,24 @@ mod tests {
 		}
 		assert_eq!(instance.fake_data, 2);
 		assert!(instance.queue.drain().is_empty());
+	}
+
+	#[test]
+	fn test_await_modification() {
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
+		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+
+		thread::spawn(move || {
+			let modifications:Vec<Box<dyn FnMut(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change();
+			assert_eq!(instance.fake_data, 0);
+			for mut modification in modifications {
+				modification(&mut instance);
+			}
+			assert_eq!(instance.fake_data, 6);
+		});
+		
+		sleep(Duration::from_millis(100));
+		remote.add(|s| s.fake_data += 2);
+		remote.add(|s| s.fake_data *= 3);
 	}
 }

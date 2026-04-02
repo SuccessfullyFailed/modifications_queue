@@ -1,12 +1,24 @@
-use std::{ sync::{ Arc, Mutex } };
+use std::sync::{ Arc, Condvar, Mutex, MutexGuard };
 
 
 
-type ModificationsQueueInnerMut<T> = Arc<Mutex<Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>>>>;
+
+struct ModificationsQueueInnerMut<T> {
+	data:Mutex<Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>>>,
+	cond:Condvar
+}
+impl<T> Default for ModificationsQueueInnerMut<T> {
+	fn default() -> Self {
+		ModificationsQueueInnerMut {
+			data: Mutex::new(Vec::new()),
+			cond: Condvar::new()
+		}
+	}
+}
 
 
 
-pub struct ModificationsQueueMut<T>(ModificationsQueueInnerMut<T>);
+pub struct ModificationsQueueMut<T>(Arc<ModificationsQueueInnerMut<T>>);
 impl<T> ModificationsQueueMut<T> {
 
 	/// Create a new queue.
@@ -22,12 +34,12 @@ impl<T> ModificationsQueueMut<T> {
 
 	/// Add an item to the queue.
 	pub fn add<Modification:FnMut(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
-		self.0.lock().unwrap().push(Box::new(modification));
+		self.0.data.lock().unwrap().push(Box::new(modification));
 	}
 
 	/// Drain all modifications.
 	pub fn drain(&self) -> Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>> {
-		self.0.lock().unwrap().drain(..).collect()
+		self.0.data.lock().unwrap().drain(..).collect()
 	}
 
 	/// Apply all modifications to the given struct.
@@ -37,21 +49,32 @@ impl<T> ModificationsQueueMut<T> {
 			modification(target);
 		}
 	}
+
+	/// Puts the thread to sleep until anything is added to the queue.
+	/// If something is already in the queue, it will immediately return that.
+	/// Drains and returns all data in the queue.
+	pub fn await_change(&self) -> Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>> {
+		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
+		while data_handle.is_empty() {
+			data_handle = self.0.cond.wait(data_handle).unwrap();
+		}
+		data_handle.drain(..).collect()
+	}
 }
 impl<T> Default for ModificationsQueueMut<T> {
 	fn default() -> Self {
-		ModificationsQueueMut(Arc::new(Mutex::new(Vec::new())))
+		ModificationsQueueMut(Arc::new(ModificationsQueueInnerMut::default()))
 	}
 }
 
 
 
-pub struct ModificationsQueueRemoteMut<T>(ModificationsQueueInnerMut<T>);
+pub struct ModificationsQueueRemoteMut<T>(Arc<ModificationsQueueInnerMut<T>>);
 impl<T> ModificationsQueueRemoteMut<T> {
 
 	/// Add an item to the queue this remote targets.
 	pub fn add<Modification:FnMut(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
-		self.0.lock().unwrap().push(Box::new(modification));
+		self.0.data.lock().unwrap().push(Box::new(modification));
 	}
 }
 impl<T> Clone for ModificationsQueueRemoteMut<T> {
