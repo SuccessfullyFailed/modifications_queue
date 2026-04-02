@@ -2,7 +2,7 @@ use std::{ sync::{ Arc, Mutex } };
 
 
 
-type ModificationsQueueInnerMut<T> = Arc<Mutex<Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>>>>;
+type ModificationsQueueInnerMut<T> = Arc<Mutex<Vec<Box<dyn Fn(&mut T) + Send + Sync + 'static>>>>;
 
 
 
@@ -21,18 +21,18 @@ impl<T> ModificationsQueueMut<T> {
 	}
 
 	/// Add an item to the queue.
-	pub fn add<Modification:FnMut(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
+	pub fn add<Modification:Fn(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
 		self.0.lock().unwrap().push(Box::new(modification));
 	}
 
 	/// Drain all modifications.
-	pub fn drain(&self) -> Vec<Box<dyn FnMut(&mut T) + Send + Sync + 'static>> {
+	pub fn drain(&self) -> Vec<Box<dyn Fn(&mut T) + Send + Sync + 'static>> {
 		self.0.lock().unwrap().drain(..).collect()
 	}
 
 	/// Apply all modifications to the given struct.
 	pub fn apply_to(&self, target:&mut T) {
-		let modifications:Vec<Box<dyn FnMut(&mut T) + Send + Sync>> = self.drain();
+		let modifications:Vec<Box<dyn Fn(&mut T) + Send + Sync>> = self.drain();
 		for mut modification in modifications {
 			modification(target);
 		}
@@ -50,7 +50,7 @@ pub struct ModificationsQueueRemoteMut<T>(ModificationsQueueInnerMut<T>);
 impl<T> ModificationsQueueRemoteMut<T> {
 
 	/// Add an item to the queue this remote targets.
-	pub fn add<Modification:FnMut(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
+	pub fn add<Modification:Fn(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
 		self.0.lock().unwrap().push(Box::new(modification));
 	}
 }
