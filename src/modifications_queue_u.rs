@@ -1,20 +1,20 @@
 #[cfg(test)]
 mod tests {
-	use crate::{ ModificationsQueueMut, ModificationsQueueRemoteMut };
+	use crate::{ ModificationsQueue, ModificationsQueueRemote };
 	use std::{ thread::{ self, sleep }, time::{ Duration, Instant } };
 
 
 
 	struct StructThatHasQueue {
 		fake_data:usize,
-		queue:ModificationsQueueMut<StructThatHasQueue>
+		queue:ModificationsQueue<StructThatHasQueue>
 	}
 	
 
 
 	#[test]
 	fn test_add_and_drain_modifications() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
 		instance.queue.add(|s| s.fake_data += 2);
 		instance.queue.add(|s| s.fake_data *= 3);
 		for modification in instance.queue.drain() {
@@ -26,8 +26,8 @@ mod tests {
 
 	#[test]
 	fn test_add_and_drain_modifications_from_remote() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
-		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 		remote.add(|s| s.fake_data += 2);
 		remote.add(|s| s.fake_data *= 3);
 		for modification in instance.queue.drain() {
@@ -39,8 +39,8 @@ mod tests {
 
 	#[test]
 	fn test_add_and_drain_modifications_from_remote_from_remote_function() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
-		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 		let remote_wrapper:Box<dyn Fn()> = Box::new(move || remote.add(|s| s.fake_data += 2));
 		remote_wrapper();
 		for modification in instance.queue.drain() {
@@ -52,8 +52,8 @@ mod tests {
 
 	#[test]
 	fn test_modifications_capture_mutable_variable() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
-		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 
 		let mut instance_index:usize = 0;
 		instance.queue.add(move |s| {
@@ -76,7 +76,7 @@ mod tests {
 
 	#[test]
 	fn test_multi_level_variable_capturing() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
 		let test_fn:Box<dyn Fn(&mut StructThatHasQueue) + Send + Sync + 'static> = Box::new(|s| s.fake_data += 2);
 		instance.queue.add(move |s| s.queue.add(test_fn));
 		for modification in instance.queue.drain() {
@@ -92,8 +92,8 @@ mod tests {
 
 	#[test]
 	fn test_await_modification() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
-		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
 			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change();
@@ -111,8 +111,8 @@ mod tests {
 
 	#[test]
 	fn test_await_modification_timeout() {
-		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
-		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
 			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(10));

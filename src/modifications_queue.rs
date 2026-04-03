@@ -3,13 +3,13 @@ use std::{ time::Duration, sync::{ Arc, Condvar, Mutex, MutexGuard } };
 
 
 
-struct ModificationsQueueInnerMut<T> {
+struct ModificationsQueueInner<T> {
 	data:Mutex<Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>>>,
 	cond:Condvar
 }
-impl<T> Default for ModificationsQueueInnerMut<T> {
+impl<T> Default for ModificationsQueueInner<T> {
 	fn default() -> Self {
-		ModificationsQueueInnerMut {
+		ModificationsQueueInner {
 			data: Mutex::new(Vec::new()),
 			cond: Condvar::new()
 		}
@@ -18,18 +18,18 @@ impl<T> Default for ModificationsQueueInnerMut<T> {
 
 
 
-pub struct ModificationsQueueMut<T>(Arc<ModificationsQueueInnerMut<T>>);
-impl<T> ModificationsQueueMut<T> {
+pub struct ModificationsQueue<T>(Arc<ModificationsQueueInner<T>>);
+impl<T> ModificationsQueue<T> {
 
 	/// Create a new queue.
-	pub fn new() -> ModificationsQueueMut<T> {
+	pub fn new() -> ModificationsQueue<T> {
 		Self::default()
 	}
 
 	/// Creates a remote to this queue.
 	/// Allows changes from multiple places without having to borrow the queue.
-	pub fn create_remote(&self) -> ModificationsQueueRemoteMut<T> {
-		ModificationsQueueRemoteMut(Arc::clone(&self.0))
+	pub fn create_remote(&self) -> ModificationsQueueRemote<T> {
+		ModificationsQueueRemote(Arc::clone(&self.0))
 	}
 
 	/// Add an item to the queue.
@@ -72,24 +72,24 @@ impl<T> ModificationsQueueMut<T> {
 		data_handle.drain(..).collect()
 	}
 }
-impl<T> Default for ModificationsQueueMut<T> {
+impl<T> Default for ModificationsQueue<T> {
 	fn default() -> Self {
-		ModificationsQueueMut(Arc::new(ModificationsQueueInnerMut::default()))
+		ModificationsQueue(Arc::new(ModificationsQueueInner::default()))
 	}
 }
 
 
 
-pub struct ModificationsQueueRemoteMut<T>(Arc<ModificationsQueueInnerMut<T>>);
-impl<T> ModificationsQueueRemoteMut<T> {
+pub struct ModificationsQueueRemote<T>(Arc<ModificationsQueueInner<T>>);
+impl<T> ModificationsQueueRemote<T> {
 
 	/// Add an item to the queue this remote targets.
 	pub fn add<Modification:FnOnce(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
 		self.0.data.lock().unwrap().push(Box::new(modification));
 	}
 }
-impl<T> Clone for ModificationsQueueRemoteMut<T> {
+impl<T> Clone for ModificationsQueueRemote<T> {
 	fn clone(&self) -> Self {
-		ModificationsQueueRemoteMut(Arc::clone(&self.0))
+		ModificationsQueueRemote(Arc::clone(&self.0))
 	}
 }
