@@ -1,4 +1,4 @@
-use std::{ time::Duration, sync::{ Arc, Condvar, Mutex, MutexGuard } };
+use std::{ sync::{ Arc, Condvar, Mutex, MutexGuard }, time::{Duration, Instant} };
 
 
 
@@ -66,7 +66,8 @@ impl<T> ModificationsQueue<T> {
 	/// Drains and returns all data in the queue.
 	pub fn await_change_timeout(&self, timeout:Duration) -> Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>> {
 		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
-		while data_handle.is_empty() {
+		let end:Instant = Instant::now() + timeout;
+		while data_handle.is_empty() && Instant::now() < end {
 			data_handle = self.0.cond.wait_timeout(data_handle, timeout).unwrap().0;
 		}
 		data_handle.drain(..).collect()

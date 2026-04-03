@@ -115,15 +115,20 @@ mod tests {
 		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
+
+			// Assert break after timeout when no changes made.
 			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(10));
+			let start:Instant = Instant::now();
 			assert_eq!(instance.fake_data, 0);
 			for modification in modifications {
 				modification(&mut instance);
 			}
 			assert_eq!(instance.fake_data, 0);
+			assert!(start.elapsed().as_millis() < 20);
 			
+			// Assert break when changes made before timeout.
 			let start:Instant = Instant::now();
-			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(2000));
+			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(200));
 			assert_eq!(instance.fake_data, 0);
 			for modification in modifications {
 				modification(&mut instance);
