@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-	use std::{ thread::{ self, sleep }, time::{ Duration, Instant } };
 	use crate::{ ModificationsQueueMut, ModificationsQueueRemoteMut };
+	use std::{ thread::{ self, sleep }, time::{ Duration, Instant } };
 
 
 
@@ -17,7 +17,7 @@ mod tests {
 		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
 		instance.queue.add(|s| s.fake_data += 2);
 		instance.queue.add(|s| s.fake_data *= 3);
-		for mut modification in instance.queue.drain() {
+		for modification in instance.queue.drain() {
 			modification(&mut instance);
 		}
 		assert_eq!(instance.fake_data, 6);
@@ -30,7 +30,7 @@ mod tests {
 		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
 		remote.add(|s| s.fake_data += 2);
 		remote.add(|s| s.fake_data *= 3);
-		for mut modification in instance.queue.drain() {
+		for modification in instance.queue.drain() {
 			modification(&mut instance);
 		}
 		assert_eq!(instance.fake_data, 6);
@@ -43,7 +43,7 @@ mod tests {
 		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
 		let remote_wrapper:Box<dyn Fn()> = Box::new(move || remote.add(|s| s.fake_data += 2));
 		remote_wrapper();
-		for mut modification in instance.queue.drain() {
+		for modification in instance.queue.drain() {
 			modification(&mut instance);
 		}
 		assert_eq!(instance.fake_data, 2);
@@ -51,7 +51,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_modifications_fnmut() {
+	fn test_modifications_capture_mutable_variable() {
 		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
 		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
 
@@ -67,7 +67,23 @@ mod tests {
 			s.fake_data += remote_index;
 		});
 
-		for mut modification in instance.queue.drain() {
+		for modification in instance.queue.drain() {
+			modification(&mut instance);
+		}
+		assert_eq!(instance.fake_data, 2);
+		assert!(instance.queue.drain().is_empty());
+	}
+
+	#[test]
+	fn test_multi_level_variable_capturing() {
+		let mut instance:StructThatHasQueue = StructThatHasQueue { fake_data: 0, queue: ModificationsQueueMut::new() };
+		let test_fn:Box<dyn Fn(&mut StructThatHasQueue) + Send + Sync + 'static> = Box::new(|s| s.fake_data += 2);
+		instance.queue.add(move |s| s.queue.add(test_fn));
+		for modification in instance.queue.drain() {
+			modification(&mut instance);
+		}
+		assert_eq!(instance.fake_data, 0);
+		for modification in instance.queue.drain() {
 			modification(&mut instance);
 		}
 		assert_eq!(instance.fake_data, 2);
@@ -80,9 +96,9 @@ mod tests {
 		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
-			let modifications:Vec<Box<dyn FnMut(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change();
+			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change();
 			assert_eq!(instance.fake_data, 0);
-			for mut modification in modifications {
+			for modification in modifications {
 				modification(&mut instance);
 			}
 			assert_eq!(instance.fake_data, 6);
@@ -99,17 +115,17 @@ mod tests {
 		let remote:ModificationsQueueRemoteMut<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
-			let modifications:Vec<Box<dyn FnMut(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(10));
+			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(10));
 			assert_eq!(instance.fake_data, 0);
-			for mut modification in modifications {
+			for modification in modifications {
 				modification(&mut instance);
 			}
 			assert_eq!(instance.fake_data, 0);
 			
 			let start:Instant = Instant::now();
-			let modifications:Vec<Box<dyn FnMut(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(2000));
+			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(2000));
 			assert_eq!(instance.fake_data, 0);
-			for mut modification in modifications {
+			for modification in modifications {
 				modification(&mut instance);
 			}
 			assert_eq!(instance.fake_data, 0);
