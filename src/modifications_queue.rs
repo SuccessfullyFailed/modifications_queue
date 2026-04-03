@@ -1,4 +1,4 @@
-use std::sync::{ Arc, Condvar, Mutex, MutexGuard };
+use std::{ time::Duration, sync::{ Arc, Condvar, Mutex, MutexGuard } };
 
 
 
@@ -55,6 +55,17 @@ impl<T> ModificationsQueue<T> {
 		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnMut(&T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
 		while data_handle.is_empty() {
 			data_handle = self.0.cond.wait(data_handle).unwrap();
+		}
+		data_handle.drain(..).collect()
+	}
+
+	/// Puts the thread to sleep until anything is added to the queue or the given duration has surpassed.
+	/// If something is already in the queue, it will immediately return that.
+	/// Drains and returns all data in the queue.
+	pub fn await_change_timeout(&self, timeout:Duration) -> Vec<Box<dyn FnMut(&T) + Send + Sync + 'static>> {
+		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnMut(&T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
+		while data_handle.is_empty() {
+			data_handle = self.0.cond.wait_timeout(data_handle, timeout).unwrap().0;
 		}
 		data_handle.drain(..).collect()
 	}

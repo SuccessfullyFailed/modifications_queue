@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
+	use std::{ sync::Mutex, thread::{ self, sleep }, time::{ Duration, Instant } };
 	use crate::{ ModificationsQueue, ModificationsQueueRemote };
-	use std::{ sync::Mutex, thread::{self, sleep}, time::Duration };
 
 
 
@@ -86,6 +86,34 @@ mod tests {
 				modification(&instance);
 			}
 			assert_eq!(*instance.fake_data.lock().unwrap(), 6);
+		});
+		
+		sleep(Duration::from_millis(100));
+		remote.add(|s| *s.fake_data.lock().unwrap() += 2);
+		remote.add(|s| *s.fake_data.lock().unwrap() *= 3);
+	}
+
+	#[test]
+	fn test_await_modification_timeout() {
+		let instance:StructThatHasQueue = StructThatHasQueue { fake_data: Mutex::new(0), queue: ModificationsQueue::new() };
+		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
+
+		thread::spawn(move || {
+			let modifications:Vec<Box<dyn FnMut(&StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(10));
+			assert_eq!(*instance.fake_data.lock().unwrap(), 0);
+			for mut modification in modifications {
+				modification(&instance);
+			}
+			assert_eq!(*instance.fake_data.lock().unwrap(), 0);
+
+			let start:Instant = Instant::now();
+			let modifications:Vec<Box<dyn FnMut(&StructThatHasQueue) + Send + Sync>> = instance.queue.await_change_timeout(Duration::from_millis(2000));
+			assert_eq!(*instance.fake_data.lock().unwrap(), 0);
+			for mut modification in modifications {
+				modification(&instance);
+			}
+			assert_eq!(*instance.fake_data.lock().unwrap(), 6);
+			assert!(start.elapsed().as_millis() < 100);
 		});
 		
 		sleep(Duration::from_millis(100));
