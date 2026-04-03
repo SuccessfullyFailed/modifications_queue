@@ -1,4 +1,4 @@
-use std::{ sync::{ Arc, Condvar, Mutex, MutexGuard }, time::{Duration, Instant} };
+use std::{ sync::{ Arc, Condvar, Mutex, MutexGuard }, time::{ Duration, Instant } };
 
 
 
@@ -35,6 +35,7 @@ impl<T> ModificationsQueue<T> {
 	/// Add an item to the queue.
 	pub fn add<Modification:FnOnce(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
 		self.0.data.lock().unwrap().push(Box::new(modification));
+		self.0.cond.notify_all();
 	}
 
 	/// Drain all modifications.
@@ -87,6 +88,7 @@ impl<T> ModificationsQueueRemote<T> {
 	/// Add an item to the queue this remote targets.
 	pub fn add<Modification:FnOnce(&mut T) + Send + Sync + 'static>(&self, modification:Modification) {
 		self.0.data.lock().unwrap().push(Box::new(modification));
+		self.0.cond.notify_all();
 	}
 }
 impl<T> Clone for ModificationsQueueRemote<T> {

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-	use crate::{ ModificationsQueue, ModificationsQueueRemote };
 	use std::{ thread::{ self, sleep }, time::{ Duration, Instant } };
+	use crate::{ ModificationsQueue, ModificationsQueueRemote };
 
 
 
@@ -96,17 +96,20 @@ mod tests {
 		let remote:ModificationsQueueRemote<StructThatHasQueue> = instance.queue.create_remote();
 
 		thread::spawn(move || {
+			let thread_birth:Instant = Instant::now();
 			let modifications:Vec<Box<dyn FnOnce(&mut StructThatHasQueue) + Send + Sync>> = instance.queue.await_change();
 			assert_eq!(instance.fake_data, 0);
 			for modification in modifications {
 				modification(&mut instance);
 			}
 			assert_eq!(instance.fake_data, 6);
+			assert!(thread_birth.elapsed().as_millis() < 20, "Modification was not detected upon adding it.");
 		});
 		
-		sleep(Duration::from_millis(100));
+		sleep(Duration::from_millis(10));
 		remote.add(|s| s.fake_data += 2);
 		remote.add(|s| s.fake_data *= 3);
+		sleep(Duration::from_millis(100));
 	}
 
 	#[test]
