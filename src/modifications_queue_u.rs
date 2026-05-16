@@ -144,4 +144,15 @@ mod tests {
 		remote.add(|s| s.fake_data += 2);
 		remote.add(|s| s.fake_data *= 3);
 	}
+
+	#[test]
+	fn test_accurate_timeout() {
+		let queue:ModificationsQueue<u8> = ModificationsQueue::new();
+		let timeout:Duration = Duration::from_millis(1);
+		for _ in 1..101 {
+			let start:Instant = Instant::now();
+			queue.await_change_timeout_accurate(timeout);
+			assert!(start.elapsed().as_millis() < 5);
+		}
+	}
 }

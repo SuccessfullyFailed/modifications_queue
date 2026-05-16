@@ -1,4 +1,4 @@
-use std::{ sync::{ Arc, Condvar, Mutex, MutexGuard }, time::{ Duration, Instant } };
+use std::{ thread, time::{ Duration, Instant }, sync::{ Arc, Condvar, Mutex, MutexGuard } };
 
 
 
@@ -67,9 +67,40 @@ impl<T> ModificationsQueue<T> {
 	/// Drains and returns all data in the queue.
 	pub fn await_change_timeout(&self, timeout:Duration) -> Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>> {
 		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
-		let end:Instant = Instant::now() + timeout;
-		while data_handle.is_empty() && Instant::now() < end {
+		let deadline:Instant = Instant::now() + timeout;
+		while data_handle.is_empty() && Instant::now() < deadline {
 			data_handle = self.0.cond.wait_timeout(data_handle, timeout).unwrap().0;
+		}
+		data_handle.drain(..).collect()
+	}
+
+	/// Puts the thread to sleep until anything is added to the queue or the given duration has surpassed.
+	/// If something is already in the queue, it will immediately return that.
+	/// Drains and returns all data in the queue.
+	/// Uses a more accurate method for the timeout, which uses more CPU usage.
+	pub fn await_change_timeout_accurate(&self, timeout:Duration) -> Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>> {
+		let mut data_handle:MutexGuard<'_, Vec<Box<dyn FnOnce(&mut T) + Send + Sync + 'static>>> = self.0.data.lock().unwrap();
+		let deadline:Instant = Instant::now() + timeout;
+		while data_handle.is_empty() && Instant::now() < deadline {
+
+			// If deadline was passed, drain and return data.
+			let now:Instant = Instant::now();
+			if now >= deadline {
+				return data_handle.drain(..).collect(); // timed out
+			}
+
+			// If remaining duration is relatively large, use the default wait for a large chunk.
+			// Use 'yield_now' for the rest of the delay in a highly accurate time-checking loop.
+			const DEFAULT_SLEEP_CHUNK:u64 = 16;
+			let delay:u64 = (deadline - now).as_millis() as u64;
+			let accurate_sleep_delay:u64 = delay % DEFAULT_SLEEP_CHUNK;
+			let chunk_sleep_delay:u64 = delay - accurate_sleep_delay;
+			if chunk_sleep_delay != 0 {
+				data_handle = self.0.cond.wait_timeout(data_handle, timeout).unwrap().0;
+			}
+			if accurate_sleep_delay != 0 && data_handle.is_empty() {
+				thread::yield_now();
+			}
 		}
 		data_handle.drain(..).collect()
 	}
